@@ -258,10 +258,7 @@ public class ScriptRuntime {
         }
 
         if (cx.getLanguageVersion() >= Context.VERSION_ES6) {
-            new LazilyLoadedCtor(scope, NativeSymbol.CLASS_NAME,
-                NativeSymbol.class.getName(),
-                sealed, true);
-
+            NativeSymbol.init(scope, sealed);
         }
 
 
@@ -1478,6 +1475,11 @@ public class ScriptRuntime {
 
         if (obj instanceof XMLObject) {
             result = ((XMLObject)obj).get(cx, elem);
+        } else if (elem instanceof NativeSymbol) {
+            if (!(obj instanceof ScriptableObject)) {
+                throw typeError("Incompatible object type");
+            }
+            result = ScriptableObject.getProperty((ScriptableObject)obj, (NativeSymbol)elem);
         } else {
             String s = toStringIdOrIndex(cx, elem);
             if (s == null) {
@@ -1637,6 +1639,11 @@ public class ScriptRuntime {
     {
         if (obj instanceof XMLObject) {
             ((XMLObject)obj).put(cx, elem, value);
+        } else if (elem instanceof NativeSymbol) {
+            if (!(obj instanceof ScriptableObject)) {
+                throw typeError("Incompatible object type");
+            }
+            ScriptableObject.putProperty((ScriptableObject)obj, (NativeSymbol)elem, value);
         } else {
             String s = toStringIdOrIndex(cx, elem);
             if (s == null) {
@@ -2416,18 +2423,35 @@ public class ScriptRuntime {
     public static Callable getElemFunctionAndThis(Object obj, Object elem,
                                                   Context cx, Scriptable scope)
     {
-        String str = toStringIdOrIndex(cx, elem);
-        if (str != null) {
-            return getPropFunctionAndThis(obj, str, cx, scope);
-        }
-        int index = lastIndexResult(cx);
+        Scriptable thisObj;
+        Object value;
 
-        Scriptable thisObj = toObjectOrNull(cx, obj, scope);
-        if (thisObj == null) {
-            throw undefCallError(obj, String.valueOf(index));
+        if (elem instanceof NativeSymbol) {
+            thisObj = toObjectOrNull(cx, obj, scope);
+            if (thisObj == null) {
+                throw undefCallError(obj, String.valueOf(elem));
+            }
+
+            if (!(thisObj instanceof ScriptableObject)) {
+                throw typeError("Incompatible object type");
+            }
+            value = ScriptableObject.getProperty((ScriptableObject)thisObj, (NativeSymbol)elem);
+
+        } else {
+            String str = toStringIdOrIndex(cx, elem);
+            if (str != null) {
+                return getPropFunctionAndThis(obj, str, cx, scope);
+            }
+            int index = lastIndexResult(cx);
+
+            thisObj = toObjectOrNull(cx, obj, scope);
+            if (thisObj == null) {
+                throw undefCallError(obj, String.valueOf(elem));
+            }
+
+            value = ScriptableObject.getProperty(thisObj, index);
         }
 
-        Object value = ScriptableObject.getProperty(thisObj, index);
         if (!(value instanceof Callable)) {
             throw notFunctionError(value, elem);
         }
