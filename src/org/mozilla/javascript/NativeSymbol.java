@@ -6,32 +6,36 @@
 
 package org.mozilla.javascript;
 
+import java.io.Serializable;
 import java.util.HashMap;
 import java.util.Map;
 
 public class NativeSymbol extends IdScriptableObject {
-
-    public static final String SPECIES_PROPERTY = "@@species";
-    public static final String ITERATOR_PROPERTY = "@@iterator";
-    public static final String TO_STRING_TAG_PROPERTY = "@@toStringTag";
+    private static final long serialVersionUID = -589539749749830003L;
 
     public static final String CLASS_NAME = "Symbol";
 
-    private static final Object GLOBAL_SYMBOL_TABLE = new Object();
+    private static final Object GLOBAL_TABLE_KEY = new Object();
 
-    private String description;
+    public static final Key ITERATOR = new Key();
+    public static final Key TO_STRING_TAG = new Key();
+    public static final Key SPECIES = new Key();
 
-    public static void init(Scriptable scope, boolean sealed) {
-        NativeSymbol obj = new NativeSymbol(Undefined.instance);
-        obj.exportAsJSClass(MAX_PROTOTYPE_ID, scope, sealed);
+    private final String description;
+    private final Key key;
+
+    public static void init(Context cx, Scriptable scope, boolean sealed) {
+        NativeSymbol obj = new NativeSymbol("", new Key());
+        ScriptableObject ctor = obj.exportAsJSClass(MAX_PROTOTYPE_ID, scope, sealed);
+
+        createStandardSymbol(cx, scope, ctor, "iterator", ITERATOR);
+        createStandardSymbol(cx, scope, ctor, "species", SPECIES);
+        createStandardSymbol(cx, scope, ctor, "toStringTag", TO_STRING_TAG);
     }
 
-    private NativeSymbol(Object arg) {
-        if (Undefined.instance.equals(arg)) {
-            description = null;
-        } else {
-            description = ScriptRuntime.toString(arg);
-        }
+    public NativeSymbol(String desc, Key key) {
+        this.description = desc;
+        this.key = key;
     }
 
     @Override
@@ -42,11 +46,13 @@ public class NativeSymbol extends IdScriptableObject {
     @Override
     protected void fillConstructorProperties(IdFunctionObject ctor) {
         super.fillConstructorProperties(ctor);
-        ctor.defineProperty("iterator", ITERATOR_PROPERTY, DONTENUM | READONLY | PERMANENT);
-        ctor.defineProperty("species", SPECIES_PROPERTY, DONTENUM | READONLY | PERMANENT);
-        ctor.defineProperty("toStringTag", TO_STRING_TAG_PROPERTY, DONTENUM | READONLY | PERMANENT);
         addIdFunctionProperty(ctor, CLASS_NAME, ConstructorId_for, "for", 1);
         addIdFunctionProperty(ctor, CLASS_NAME, ConstructorId_keyFor, "keyFor", 1);
+    }
+
+    private static void createStandardSymbol(Context cx, Scriptable scope, ScriptableObject ctor, String name, Key key) {
+        NativeSymbol sym = (NativeSymbol)cx.newObject(scope, CLASS_NAME, new Object[] { name, key });
+        ctor.defineProperty(name, sym, DONTENUM | READONLY | PERMANENT);
     }
 
     // #string_id_map#
@@ -54,9 +60,11 @@ public class NativeSymbol extends IdScriptableObject {
     @Override
     protected int findPrototypeId(String s) {
         int id = 0;
-//  #generated# Last update: 2015-06-07 10:40:05 EEST
+//  #generated# Last update: 2016-01-21 16:38:39 PST
         L0: { id = 0; String X = null;
-            if (s.length()==11) { X="constructor";id=Id_constructor; }
+            int s_length = s.length();
+            if (s_length==8) { X="toString";id=Id_toString; }
+            else if (s_length==11) { X="constructor";id=Id_constructor; }
             if (X!=null && X!=s && !X.equals(s)) id = 0;
             break L0;
         }
@@ -64,11 +72,21 @@ public class NativeSymbol extends IdScriptableObject {
         return id;
     }
 
+    @Override
+    protected int findPrototypeId(Key key) {
+        if (key == TO_STRING_TAG) {
+            return Id_toStringTag;
+        }
+        return 0;
+    }
+
     private static final int
         ConstructorId_keyFor    = -2,
         ConstructorId_for       = -1,
         Id_constructor          = 1,
-        MAX_PROTOTYPE_ID        = Id_constructor;
+        Id_toString             = 2,
+        Id_toStringTag          = 3,
+        MAX_PROTOTYPE_ID        = Id_toStringTag;
 
     // #/string_id_map#
 
@@ -79,10 +97,19 @@ public class NativeSymbol extends IdScriptableObject {
         String s = null;
         int arity = -1;
         switch (id) {
-            case Id_constructor:        arity = 1; s = "constructor"; break;
-            default:                    super.initPrototypeId(id);
+        case Id_constructor:
+            initPrototypeMethod(CLASS_NAME, id, "constructor", 1);
+            break;
+        case Id_toString:
+            initPrototypeMethod(CLASS_NAME, id, "toString", 0);
+            break;
+        case Id_toStringTag:
+            initPrototypeValue(id, TO_STRING_TAG, CLASS_NAME, DONTENUM | READONLY);
+            break;
+        default:
+            super.initPrototypeId(id);
+            break;
         }
-        initPrototypeMethod(CLASS_NAME, id, s, arity);
     }
 
     @Override
@@ -98,41 +125,65 @@ public class NativeSymbol extends IdScriptableObject {
             return js_keyFor(cx, scope, args);
 
         case Id_constructor:
-            if (args.length > 0) {
-                return new NativeSymbol(args[0]);
+            if (thisObj == null) {
+                return js_constructor(args);
             } else {
-                return new NativeSymbol(Undefined.instance);
+                return cx.newObject(scope, CLASS_NAME, args);
             }
+
+        case Id_toString:
+            return getSelf(thisObj).toString();
         default:
             return super.execIdCall(f, cx, scope, thisObj, args);
         }
     }
 
-    private Object js_for(Context cx, Scriptable scope, Object[] args) {
-        String key = (args.length > 0 ? ScriptRuntime.toString(args[0]) : ScriptRuntime.toString(Undefined.instance));
-        Map<String, NativeSymbol> table = getGlobalSymbolTable(scope);
+    private NativeSymbol getSelf(Object thisObj) {
+        try {
+            return (NativeSymbol)thisObj;
+        } catch (ClassCastException cce) {
+            throw ScriptRuntime.typeError("Symbol expected");
+        }
+    }
 
-        NativeSymbol ret = table.get(key);
+    private Object js_constructor(Object[] args) {
+        String desc = (args.length > 0 ? ScriptRuntime.toString(args[0]) : "");
+        Key key = (args.length > 1 ? (Key)args[1] : new Key());
+        return new NativeSymbol(desc, key);
+    }
+
+    private Object js_for(Context cx, Scriptable scope, Object[] args) {
+        String name = (args.length > 0 ? ScriptRuntime.toString(args[0]) : ScriptRuntime.toString(Undefined.instance));
+
+        Map<String, NativeSymbol> table = getGlobalMap();
+        NativeSymbol ret = table.get(name);
+
         if (ret == null) {
-            ret = (NativeSymbol)cx.newObject(scope, CLASS_NAME, args);
-            table.put(key, ret);
+            ret = (NativeSymbol)cx.newObject(scope, CLASS_NAME, new Object[] { name });
+            table.put(name, ret);
         }
         return ret;
     }
 
     private Object js_keyFor(Context cx, Scriptable scope, Object[] args) {
-        Object sym = (args.length > 0 ? args[0] : Undefined.instance);
-        if (!(sym instanceof NativeSymbol)) {
+        Object s = (args.length > 0 ? args[0] : Undefined.instance);
+        if (!(s instanceof NativeSymbol)) {
             throw ScriptRuntime.throwCustomError(cx, scope, "TypeError", "Not a Symbol");
         }
-        Map<String, NativeSymbol> table = getGlobalSymbolTable(scope);
+        NativeSymbol sym = (NativeSymbol)s;
 
-        for (NativeSymbol s : table.values()) {
-            if (s.equals(sym)) {
-                return s;
+        Map<String, NativeSymbol> table = getGlobalMap();
+        for (Map.Entry<String, NativeSymbol> e : table.entrySet()) {
+            if (e.getValue().key == sym.key) {
+                return e.getKey();
             }
         }
         return Undefined.instance;
+    }
+
+    @Override
+    public String toString() {
+        return "Symbol(" + description + ')';
     }
 
     @Override
@@ -140,20 +191,51 @@ public class NativeSymbol extends IdScriptableObject {
         return "symbol";
     }
 
-    /**
-     * ES6 defines the concept of a "global symbol table" which is "shared by all Code Realms."
-     * In Rhino, we are defining this as being set on the "global scope." This way multiple Rhino
-     * runtimes can exist at once that share the same global symbol table.
-     */
-    private Map<String, NativeSymbol> getGlobalSymbolTable(Scriptable scope) {
-        ScriptableObject top = (ScriptableObject)ScriptableObject.getTopLevelScope(scope);
-        Map<String, NativeSymbol> table =
-            (Map<String, NativeSymbol>)top.getAssociatedValue(GLOBAL_SYMBOL_TABLE);
-        if (table == null) {
-            table = new HashMap<String, NativeSymbol>();
-            top.associateValue(GLOBAL_SYMBOL_TABLE, table);
-        }
-        return table;
+    @Override
+    public int hashCode() {
+        return key.hashCode();
     }
 
+    @Override
+    public boolean equals(Object x) {
+        try {
+            return key.equals(((NativeSymbol) x).key);
+        } catch (ClassCastException cce) {
+            return false;
+        }
+    }
+
+    public Key getKey() {
+        return key;
+    }
+
+    private Map<String, NativeSymbol> getGlobalMap() {
+        ScriptableObject top = (ScriptableObject)getTopLevelScope(this);
+        Map<String, NativeSymbol> map = (Map<String, NativeSymbol>)top.getAssociatedValue(GLOBAL_TABLE_KEY);
+        if (map == null) {
+            map = new HashMap<String, NativeSymbol>();
+            top.associateValue(GLOBAL_TABLE_KEY, map);
+        }
+        return map;
+    }
+
+    /**
+     *  This is a class used to create unique identifiers. It is always compared by identity, so that
+     *  we can use it as a unique ID for a symbol.
+     */
+    public static final class Key
+        implements Serializable
+    {
+        private static final long serialVersionUID = 4047763936785129774L;
+
+        @Override
+        public int hashCode() {
+            return System.identityHashCode(this);
+        }
+
+        @Override
+        public boolean equals(Object x) {
+            return (x == this);
+        }
+    }
 }

@@ -6,8 +6,7 @@
 
 package org.mozilla.javascript;
 
-import static org.mozilla.javascript.NativeSymbol.ITERATOR_PROPERTY;
-import static org.mozilla.javascript.NativeSymbol.TO_STRING_TAG_PROPERTY;
+import org.mozilla.javascript.NativeSymbol;
 
 public abstract class ES6Iterator extends IdScriptableObject {
 
@@ -51,14 +50,15 @@ public abstract class ES6Iterator extends IdScriptableObject {
         switch (id) {
             case Id_next:
                 initPrototypeMethod(getTag(), id, NEXT_METHOD, 0);
-                return;
+                break;
             case Id_iterator:
-                initPrototypeMethod(getTag(), id, ITERATOR_PROPERTY, "[Symbol.iterator]", 0);
-                return;
+                initPrototypeMethod(getTag(), id, NativeSymbol.ITERATOR, "[Symbol.iterator]", 0);
+                break;
             case Id_toStringTag:
-                initPrototypeValue(Id_toStringTag, TO_STRING_TAG_PROPERTY, getClassName(), DONTENUM | READONLY);
-                return;
-            default: throw new IllegalArgumentException(String.valueOf(id));
+                initPrototypeValue(id, NativeSymbol.TO_STRING_TAG, getClassName(), DONTENUM | READONLY);
+                break;
+            default:
+                throw new IllegalArgumentException(String.valueOf(id));
         }
     }
 
@@ -88,12 +88,19 @@ public abstract class ES6Iterator extends IdScriptableObject {
 
     @Override
     protected int findPrototypeId(String s) {
-        if (s.charAt(0) == 'n') {
+        if ("next".equals(s)) {
             return Id_next;
-        } else if (ITERATOR_PROPERTY.equals(s)) {
-            return Id_iterator;
-        } else if (TO_STRING_TAG_PROPERTY.equals(s)) {
+        }
+        return 0;
+    }
+
+    @Override
+    protected int findPrototypeId(NativeSymbol.Key key) {
+        if (key == NativeSymbol.TO_STRING_TAG) {
             return Id_toStringTag;
+        }
+        if (key == NativeSymbol.ITERATOR) {
+            return Id_iterator;
         }
         return 0;
     }

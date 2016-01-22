@@ -29,8 +29,16 @@ assertEquals("symbol", typeof Symbol("qwe"));
 
 var s1 = Symbol("sym");
 var s2 = Symbol("sym");
+var su = Symbol();
 assertFalse(s1 == s2);
 assertFalse(s1 === s2);
+
+// Check toString
+
+assertEquals("Symbol(sym)", s1.toString());
+assertEquals("Symbol()", su.toString());
+
+assertEquals("Symbol", Symbol.prototype[Symbol.toStringTag]);
 
 // Check the global symbol table
 
@@ -38,6 +46,10 @@ var g1 = Symbol.for("global");
 var g2 = Symbol.for("global");
 assertEquals(g1, g2);
 assertSame(g1, g2);
+var k1 = Symbol.keyFor(g1);
+assertEquals("global", k1);
+var ku = Symbol.keyFor(s1);
+assertEquals(undefined, ku);
 
 // Use symbols as property identifiers.
 // They should work as elements but not as property names.

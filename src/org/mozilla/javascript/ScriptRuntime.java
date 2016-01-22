@@ -258,9 +258,8 @@ public class ScriptRuntime {
         }
 
         if (cx.getLanguageVersion() >= Context.VERSION_ES6) {
-            NativeSymbol.init(scope, sealed);
+            NativeSymbol.init(cx, scope, sealed);
         }
-
 
         if (scope instanceof TopLevel) {
             ((TopLevel)scope).cacheBuiltins();
@@ -433,6 +432,8 @@ public class ScriptRuntime {
                 return toNumber(val.toString());
             if (val instanceof Boolean)
                 return ((Boolean) val).booleanValue() ? 1 : +0.0;
+            if (val instanceof NativeSymbol)
+                throw typeError0("msg.not.a.number");
             if (val instanceof Scriptable) {
                 val = ((Scriptable) val).getDefaultValue(NumberClass);
                 if (val instanceof Scriptable)
@@ -825,6 +826,9 @@ public class ScriptRuntime {
                 // XXX should we just teach NativeNumber.stringValue()
                 // about Numbers?
                 return numberToString(((Number)val).doubleValue(), 10);
+            }
+            if (val instanceof NativeSymbol) {
+                throw typeError0("msg.not.a.string");
             }
             if (val instanceof Scriptable) {
                 val = ((Scriptable) val).getDefaultValue(StringClass);
@@ -1476,10 +1480,8 @@ public class ScriptRuntime {
         if (obj instanceof XMLObject) {
             result = ((XMLObject)obj).get(cx, elem);
         } else if (elem instanceof NativeSymbol) {
-            if (!(obj instanceof ScriptableObject)) {
-                throw typeError("Incompatible object type");
-            }
-            result = ScriptableObject.getProperty((ScriptableObject)obj, (NativeSymbol)elem);
+            ScriptableObject so = ScriptableObject.ensureScriptableObject(obj);
+            result = ScriptableObject.getProperty(so, ((NativeSymbol)elem).getKey());
         } else {
             String s = toStringIdOrIndex(cx, elem);
             if (s == null) {
@@ -1640,10 +1642,8 @@ public class ScriptRuntime {
         if (obj instanceof XMLObject) {
             ((XMLObject)obj).put(cx, elem, value);
         } else if (elem instanceof NativeSymbol) {
-            if (!(obj instanceof ScriptableObject)) {
-                throw typeError("Incompatible object type");
-            }
-            ScriptableObject.putProperty((ScriptableObject)obj, (NativeSymbol)elem, value);
+            ScriptableObject so = ScriptableObject.ensureScriptableObject(obj);
+            ScriptableObject.putProperty(so, ((NativeSymbol)elem).getKey(), value);
         } else {
             String s = toStringIdOrIndex(cx, elem);
             if (s == null) {
@@ -1735,6 +1735,12 @@ public class ScriptRuntime {
     public static boolean deleteObjectElem(Scriptable target, Object elem,
                                            Context cx)
     {
+        if (elem instanceof NativeSymbol) {
+            ScriptableObject so = ScriptableObject.ensureScriptableObject(target);
+            NativeSymbol.Key k = ((NativeSymbol)elem).getKey();
+            so.delete(k);
+            return !so.has(k, so);
+        }
         String s = toStringIdOrIndex(cx, elem);
         if (s == null) {
             int index = lastIndexResult(cx);
@@ -1751,12 +1757,17 @@ public class ScriptRuntime {
     {
         boolean result;
 
-        String s = toStringIdOrIndex(cx, elem);
-        if (s == null) {
-            int index = lastIndexResult(cx);
-            result = ScriptableObject.hasProperty(target, index);
+        if (elem instanceof NativeSymbol) {
+            ScriptableObject so = ScriptableObject.ensureScriptableObject(target);
+            result = ScriptableObject.hasProperty(so, ((NativeSymbol)elem).getKey());
         } else {
-            result = ScriptableObject.hasProperty(target, s);
+            String s = toStringIdOrIndex(cx, elem);
+            if (s == null) {
+                int index = lastIndexResult(cx);
+                result = ScriptableObject.hasProperty(target, index);
+            } else {
+                result = ScriptableObject.hasProperty(target, s);
+            }
         }
 
         return result;
@@ -2210,10 +2221,15 @@ public class ScriptRuntime {
     }
 
     private static Object enumInitInOrder(Context cx, IdEnumeration x) {
-        if (x.obj == null || !ScriptableObject.hasProperty(x.obj, NativeSymbol.ITERATOR_PROPERTY)) {
+        if (!(x.obj instanceof ScriptableObject)) {
             throw typeError1("msg.not.iterable", toString(x.obj));
         }
-        Object iterator = ScriptableObject.getProperty(x.obj, NativeSymbol.ITERATOR_PROPERTY);
+
+        ScriptableObject xo = (ScriptableObject)x.obj;
+        if (!ScriptableObject.hasProperty(xo, NativeSymbol.ITERATOR)) {
+            throw typeError1("msg.not.iterable", toString(x.obj));
+        }
+        Object iterator = ScriptableObject.getProperty(xo, NativeSymbol.ITERATOR);
         if (!(iterator instanceof Callable)) {
             throw typeError1("msg.not.iterable", toString(x.obj));
         }
@@ -2330,12 +2346,17 @@ public class ScriptRuntime {
 
         Object result;
 
-        String s = toStringIdOrIndex(cx, x.currentId);
-        if (s == null) {
-            int index = lastIndexResult(cx);
-            result = x.obj.get(index, x.obj);
+        if (x.currentId instanceof NativeSymbol) {
+            ScriptableObject so = ScriptableObject.ensureScriptableObject(x.obj);
+            result = so.get(((NativeSymbol)x.currentId).getKey());
         } else {
-            result = x.obj.get(s, x.obj);
+            String s = toStringIdOrIndex(cx, x.currentId);
+            if (s == null) {
+                int index = lastIndexResult(cx);
+                result = x.obj.get(index, x.obj);
+            } else {
+                result = x.obj.get(s, x.obj);
+            }
         }
 
         return result;
@@ -2431,11 +2452,8 @@ public class ScriptRuntime {
             if (thisObj == null) {
                 throw undefCallError(obj, String.valueOf(elem));
             }
-
-            if (!(thisObj instanceof ScriptableObject)) {
-                throw typeError("Incompatible object type");
-            }
-            value = ScriptableObject.getProperty((ScriptableObject)thisObj, (NativeSymbol)elem);
+            ScriptableObject so = ScriptableObject.ensureScriptableObject(thisObj);
+            value = ScriptableObject.getProperty(so, ((NativeSymbol)elem).getKey());
 
         } else {
             String str = toStringIdOrIndex(cx, elem);

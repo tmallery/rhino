@@ -158,7 +158,7 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
 
         Slot(Object name, int indexOrHash, int attributes)
         {
-            assert ((name == null) || (name instanceof CharSequence) || (name instanceof NativeSymbol));
+            assert ((name == null) || (name instanceof CharSequence) || (name instanceof NativeSymbol.Key));
             this.name = name;
             this.indexOrHash = indexOrHash;
             this.attributes = (short)attributes;
@@ -471,7 +471,7 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
      * @param start the object in which the lookup began
      * @return true if and only if the property was found in the object
      */
-    public boolean has(NativeSymbol key, Scriptable start)
+    public boolean has(NativeSymbol.Key key, Scriptable start)
     {
         return null != getSlot(null, key, 0, SLOT_QUERY);
     }
@@ -528,7 +528,7 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
      * @param start the object in which the lookup began
      * @return the value of the property (may be null), or NOT_FOUND
      */
-    public Object get(NativeSymbol symbol, Scriptable start)
+    public Object get(NativeSymbol.Key symbol, Scriptable start)
     {
         Slot slot = getSlot(null, symbol, 0, SLOT_QUERY);
         if (slot == null) {
@@ -611,7 +611,7 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
      * @param value value to set the property to
      * @since 1.8.0
      */
-    public void put(NativeSymbol key, ScriptableObject start, Object value)
+    public void put(NativeSymbol.Key key, ScriptableObject start, Object value)
     {
         if (putImpl(null, key, 0, start, value))
             return;
@@ -631,7 +631,21 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
     public void delete(String name)
     {
         checkNotSealed(name, 0);
-        removeSlot(name, 0);
+        removeSlot(name, null, 0);
+    }
+
+    /**
+     * Removes a named property from the object.
+     *
+     * If the property is not found, or it has the PERMANENT attribute,
+     * no action is taken.
+     *
+     * @param key the symbol's value for the property
+     */
+    public void delete(NativeSymbol.Key key)
+    {
+        checkNotSealed(key, 0);
+        removeSlot(null, key, 0);
     }
 
     /**
@@ -645,7 +659,7 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
     public void delete(int index)
     {
         checkNotSealed(null, index);
-        removeSlot(null, index);
+        removeSlot(null, null, index);
     }
 
     /**
@@ -761,7 +775,27 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
      */
     public int getAttributes(String name)
     {
-        return findAttributeSlot(name, 0, SLOT_QUERY).getAttributes();
+        return findAttributeSlot(name, null, 0, SLOT_QUERY).getAttributes();
+    }
+
+    /**
+     * Get the attributes of a named property.
+     *
+     * The property is specified by <code>name</code>
+     * as defined for <code>has</code>.<p>
+     *
+     * @param key the unique ID of a Symbol
+     * @return the bitset of attributes
+     * @exception EvaluatorException if the named property is not found
+     * @see org.mozilla.javascript.ScriptableObject#has(String, Scriptable)
+     * @see org.mozilla.javascript.ScriptableObject#READONLY
+     * @see org.mozilla.javascript.ScriptableObject#DONTENUM
+     * @see org.mozilla.javascript.ScriptableObject#PERMANENT
+     * @see org.mozilla.javascript.ScriptableObject#EMPTY
+     */
+    public int getAttributes(NativeSymbol.Key key)
+    {
+        return findAttributeSlot(null, key, 0, SLOT_QUERY).getAttributes();
     }
 
     /**
@@ -779,7 +813,7 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
      */
     public int getAttributes(int index)
     {
-        return findAttributeSlot(null, index, SLOT_QUERY).getAttributes();
+        return findAttributeSlot(null, null, index, SLOT_QUERY).getAttributes();
     }
 
     /**
@@ -806,7 +840,7 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
     public void setAttributes(String name, int attributes)
     {
         checkNotSealed(name, 0);
-        findAttributeSlot(name, 0, SLOT_MODIFY).setAttributes(attributes);
+        findAttributeSlot(name, null, 0, SLOT_MODIFY).setAttributes(attributes);
     }
 
     /**
@@ -824,7 +858,34 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
     public void setAttributes(int index, int attributes)
     {
         checkNotSealed(null, index);
-        findAttributeSlot(null, index, SLOT_MODIFY).setAttributes(attributes);
+        findAttributeSlot(null, null, index, SLOT_MODIFY).setAttributes(attributes);
+    }
+
+    /**
+     * Set the attributes of a named property.
+     *
+     * The property is specified by <code>name</code>
+     * as defined for <code>has</code>.<p>
+     *
+     * The possible attributes are READONLY, DONTENUM,
+     * and PERMANENT. Combinations of attributes
+     * are expressed by the bitwise OR of attributes.
+     * EMPTY is the state of no attributes set. Any unused
+     * bits are reserved for future use.
+     *
+     * @param symbol the symbol that uniquely identifies the property
+     * @param attributes the bitset of attributes
+     * @exception EvaluatorException if the named property is not found
+     * @see org.mozilla.javascript.Scriptable#has(String, Scriptable)
+     * @see org.mozilla.javascript.ScriptableObject#READONLY
+     * @see org.mozilla.javascript.ScriptableObject#DONTENUM
+     * @see org.mozilla.javascript.ScriptableObject#PERMANENT
+     * @see org.mozilla.javascript.ScriptableObject#EMPTY
+     */
+    public void setAttributes(NativeSymbol.Key symbol, int attributes)
+    {
+        checkNotSealed(symbol, 0);
+        findAttributeSlot(null, symbol, 0, SLOT_MODIFY).setAttributes(attributes);
     }
 
     /**
@@ -1687,6 +1748,24 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
     }
 
     /**
+     * Define a JavaScript property.
+     *
+     * Creates the property with an initial value and sets its attributes.
+     *
+     * @param symbol the symbol that defines the property.
+     * @param value the initial value of the property
+     * @param attributes the attributes of the JavaScript property
+     * @see org.mozilla.javascript.Scriptable#put(String, Scriptable, Object)
+     */
+    public void defineProperty(NativeSymbol.Key symbol, Object value,
+                               int attributes)
+    {
+        checkNotSealed(symbol, 0);
+        put(symbol, this, value);
+        setAttributes(symbol, attributes);
+    }
+
+    /**
      * Utility method to add properties to arbitrary Scriptable object.
      * If destination is instance of ScriptableObject, calls
      * defineProperty there, otherwise calls put in destination
@@ -2360,7 +2439,7 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
      *         <code>Scriptable.NOT_FOUND</code> if not found
      * @since 1.5R2
      */
-    public static Object getProperty(ScriptableObject obj, NativeSymbol symbol)
+    public static Object getProperty(ScriptableObject obj, NativeSymbol.Key symbol)
     {
         ScriptableObject start = obj;
         Object result;
@@ -2469,6 +2548,22 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
     }
 
     /**
+     * Returns whether a named property is defined in an object or any object
+     * in its prototype chain.
+     * <p>
+     * Searches the prototype chain for a property named <code>name</code>.
+     * <p>
+     * @param obj a JavaScript object
+     * @param key the value of a symbol
+     * @return the true if property was found
+     * @since 1.5R2
+     */
+    public static boolean hasProperty(ScriptableObject obj, NativeSymbol.Key key)
+    {
+        return null != getBase(obj, key);
+    }
+
+    /**
      * If hasProperty(obj, name) would return true, then if the property that
      * was found is compatible with the new property, this method just returns.
      * If the property is not compatible, then an exception is thrown.
@@ -2541,7 +2636,7 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
      * @param value any JavaScript value accepted by Scriptable.put
      * @since 1.8.0
      */
-    public static void putProperty(ScriptableObject obj, NativeSymbol key, Object value)
+    public static void putProperty(ScriptableObject obj, NativeSymbol.Key key, Object value)
     {
         ScriptableObject base = getBase(obj, key);
         if (base == null)
@@ -2747,7 +2842,7 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
         return obj;
     }
 
-    private static ScriptableObject getBase(ScriptableObject obj, NativeSymbol key)
+    private static ScriptableObject getBase(ScriptableObject obj, NativeSymbol.Key key)
     {
         do {
             if (obj.has(key, obj))
@@ -2831,7 +2926,7 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
      * @return false if this != start and no slot was found.  true if this == start
      * or this != start and a READONLY slot was found.
      */
-    private boolean putImpl(String name, NativeSymbol key, int index, Scriptable start,
+    private boolean putImpl(String name, NativeSymbol.Key key, int index, Scriptable start,
                             Object value)
     {
         // This method is very hot (basically called on each assignment)
@@ -2872,7 +2967,7 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
      * @return false if this != start and no slot was found.  true if this == start
      * or this != start and a READONLY slot was found.
      */
-    private boolean putConstImpl(String name, NativeSymbol key, int index, Scriptable start,
+    private boolean putConstImpl(String name, NativeSymbol.Key key, int index, Scriptable start,
                                  Object value, int constFlag)
     {
         assert (constFlag != EMPTY);
@@ -2911,11 +3006,18 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
         return slot.setValue(value, this, start);
     }
 
-    private Slot findAttributeSlot(String name, int index, int accessType)
+    private Slot findAttributeSlot(String name, NativeSymbol.Key symbol, int index, int accessType)
     {
-        Slot slot = getSlot(name, null, index, accessType);
+        Slot slot = getSlot(name, symbol, index, accessType);
         if (slot == null) {
-            String str = (name != null ? name : Integer.toString(index));
+            String str;
+            if (name != null) {
+                str = name;
+            } else if (symbol != null) {
+                str = symbol.toString();
+            } else {
+                str = String.valueOf(index);
+            }
             throw Context.reportRuntimeError1("msg.prop.not.found", str);
         }
         return slot;
@@ -2932,7 +3034,7 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
      * @param name property name or null if slot holds spare array index.
      * @param index index or 0 if slot holds property name.
      */
-    private Slot getSlot(String name, NativeSymbol symbol, int index, int accessType)
+    private Slot getSlot(String name, NativeSymbol.Key symbol, int index, int accessType)
     {
         // Check the hashtable without using synchronization
         Slot[] slotsLocalRef = slots; // Get stable local reference
@@ -3087,8 +3189,20 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
         return newSlot;
     }
 
-    private synchronized void removeSlot(String name, int index) {
-        int indexOrHash = (name != null ? name.hashCode() : index);
+    private synchronized void removeSlot(String name, NativeSymbol.Key symbol, int index) {
+        int indexOrHash;
+        Object key;
+
+        if (name != null) {
+            indexOrHash = name.hashCode();
+            key = name;
+        } else if (symbol != null) {
+            indexOrHash = symbol.hashCode();
+            key = symbol;
+        } else {
+            indexOrHash = index;
+            key = null;
+        }
 
         Slot[] slotsLocalRef = slots;
         if (count != 0) {
@@ -3098,8 +3212,8 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
             Slot slot = prev;
             while (slot != null) {
                 if (slot.indexOrHash == indexOrHash &&
-                        (slot.name == name ||
-                                (name != null && name.equals(slot.name))))
+                        (slot.name == key ||
+                                (key != null && key.equals(slot.name))))
                 {
                     break;
                 }
@@ -3331,6 +3445,9 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
     }
 
     protected Slot getSlot(Context cx, Object id, int accessType) {
+        if (id instanceof NativeSymbol) {
+            return getSlot(null, ((NativeSymbol)id).getKey(), 0, accessType);
+        }
         String name = ScriptRuntime.toStringIdOrIndex(cx, id);
         if (name == null) {
             return getSlot(null, null, ScriptRuntime.lastIndexResult(cx), accessType);

@@ -87,6 +87,30 @@ public abstract class IdScriptableObject extends ScriptableObject
             initSlot(id, name, value, attributes);
         }
 
+        final void initValue(int id, NativeSymbol.Key key, Object value, int attributes)
+        {
+            if (!(1 <= id && id <= maxId))
+                throw new IllegalArgumentException();
+            if (key == null)
+                throw new IllegalArgumentException();
+            if (value == NOT_FOUND)
+                throw new IllegalArgumentException();
+            ScriptableObject.checkValidAttributes(attributes);
+            if (obj.findPrototypeId(key) != id)
+                throw new IllegalArgumentException(key.toString());
+
+            if (id == constructorId) {
+                if (!(value instanceof IdFunctionObject)) {
+                    throw new IllegalArgumentException("consructor should be initialized with IdFunctionObject");
+                }
+                constructor = (IdFunctionObject)value;
+                constructorAttrs = (short)attributes;
+                return;
+            }
+
+            initSlot(id, "", value, attributes);
+        }
+
         private void initSlot(int id, String name, Object value,
                               int attributes)
         {
@@ -134,6 +158,11 @@ public abstract class IdScriptableObject extends ScriptableObject
         final int findId(String name)
         {
             return obj.findPrototypeId(name);
+        }
+
+        final int findId(NativeSymbol.Key key)
+        {
+            return obj.findPrototypeId(key);
         }
 
         final boolean has(int id)
@@ -334,6 +363,28 @@ public abstract class IdScriptableObject extends ScriptableObject
         return super.has(name, start);
     }
 
+
+    @Override
+    public boolean has(NativeSymbol.Key key, Scriptable start)
+    {
+        int info = findInstanceIdInfo(key);
+        if (info != 0) {
+            int attr = (info >>> 16);
+            if ((attr & PERMANENT) != 0) {
+                return true;
+            }
+            int id = (info & 0xFFFF);
+            return NOT_FOUND != getInstanceIdValue(id);
+        }
+        if (prototypeValues != null) {
+            int id = prototypeValues.findId(key);
+            if (id != 0) {
+                return prototypeValues.has(id);
+            }
+        }
+        return super.has(key, start);
+    }
+
     @Override
     public Object get(String name, Scriptable start)
     {
@@ -351,6 +402,29 @@ public abstract class IdScriptableObject extends ScriptableObject
         }
         if (prototypeValues != null) {
             int id = prototypeValues.findId(name);
+            if (id != 0) {
+                value = prototypeValues.get(id);
+                if (value != NOT_FOUND) return value;
+            }
+        }
+        return NOT_FOUND;
+    }
+
+    @Override
+    public Object get(NativeSymbol.Key key, Scriptable start)
+    {
+        Object value = super.get(key, start);
+        if (value != NOT_FOUND) {
+            return value;
+        }
+        int info = findInstanceIdInfo(key);
+        if (info != 0) {
+            int id = (info & 0xFFFF);
+            value = getInstanceIdValue(id);
+            if (value != NOT_FOUND) return value;
+        }
+        if (prototypeValues != null) {
+            int id = prototypeValues.findId(key);
             if (id != 0) {
                 value = prototypeValues.get(id);
                 if (value != NOT_FOUND) return value;
@@ -395,6 +469,39 @@ public abstract class IdScriptableObject extends ScriptableObject
     }
 
     @Override
+    public void put(NativeSymbol.Key key, ScriptableObject start, Object value)
+    {
+        int info = findInstanceIdInfo(key);
+        if (info != 0) {
+            if (start == this && isSealed()) {
+                throw Context.reportRuntimeError("msg.modify.sealed");
+            }
+            int attr = (info >>> 16);
+            if ((attr & READONLY) == 0) {
+                if (start == this) {
+                    int id = (info & 0xFFFF);
+                    setInstanceIdValue(id, value);
+                }
+                else {
+                    start.put(key, start, value);
+                }
+            }
+            return;
+        }
+        if (prototypeValues != null) {
+            int id = prototypeValues.findId(key);
+            if (id != 0) {
+                if (start == this && isSealed()) {
+                    throw Context.reportRuntimeError("msg.modify.sealed");
+                }
+                prototypeValues.set(id, start, value);
+                return;
+            }
+        }
+        super.put(key, start, value);
+    }
+
+    @Override
     public void delete(String name)
     {
         int info = findInstanceIdInfo(name);
@@ -425,6 +532,39 @@ public abstract class IdScriptableObject extends ScriptableObject
             }
         }
         super.delete(name);
+    }
+
+    @Override
+    public void delete(NativeSymbol.Key key)
+    {
+        int info = findInstanceIdInfo(key);
+        if (info != 0) {
+            // Let the super class to throw exceptions for sealed objects
+            if (!isSealed()) {
+                int attr = (info >>> 16);
+                // non-configurable
+                if ((attr & PERMANENT) != 0) {
+                    Context cx = Context.getContext();
+                    if (cx.isStrictMode()) {
+                        throw ScriptRuntime.typeError0("msg.delete.property.with.configurable.false");
+                    }
+                } else {
+                    int id = (info & 0xFFFF);
+                    setInstanceIdValue(id, NOT_FOUND);
+                }
+                return;
+            }
+        }
+        if (prototypeValues != null) {
+            int id = prototypeValues.findId(key);
+            if (id != 0) {
+                if (!isSealed()) {
+                    prototypeValues.delete(id);
+                }
+                return;
+            }
+        }
+        super.delete(key);
     }
 
     @Override
@@ -538,6 +678,16 @@ public abstract class IdScriptableObject extends ScriptableObject
         return 0;
     }
 
+    /**
+     * Map name to id of instance property.
+     * Should return 0 if not found or the result of
+     * {@link #instanceIdInfo(int, int)}.
+     */
+    protected int findInstanceIdInfo(NativeSymbol.Key key)
+    {
+        return 0;
+    }
+
     /** Map id back to property name it defines.
      */
     protected String getInstanceIdName(int id)
@@ -642,6 +792,15 @@ public abstract class IdScriptableObject extends ScriptableObject
         return function;
     }
 
+    public final IdFunctionObject initPrototypeMethod(Object tag, int id, NativeSymbol.Key key, String functionName,
+                                          int arity)
+    {
+        Scriptable scope = ScriptableObject.getTopLevelScope(this);
+        IdFunctionObject function = newIdFunction(tag, id, functionName, arity, scope);
+        prototypeValues.initValue(id, key, function, DONTENUM);
+        return function;
+    }
+
     public final void initPrototypeConstructor(IdFunctionObject f)
     {
         int id = prototypeValues.constructorId;
@@ -659,6 +818,12 @@ public abstract class IdScriptableObject extends ScriptableObject
         prototypeValues.initValue(id, name, value, attributes);
     }
 
+    public final void initPrototypeValue(int id, NativeSymbol.Key key, Object value,
+                                         int attributes)
+    {
+        prototypeValues.initValue(id, key, value, attributes);
+    }
+
     protected void initPrototypeId(int id)
     {
         throw new IllegalStateException(String.valueOf(id));
@@ -667,6 +832,11 @@ public abstract class IdScriptableObject extends ScriptableObject
     protected int findPrototypeId(String name)
     {
         throw new IllegalStateException(name);
+    }
+
+    protected int findPrototypeId(NativeSymbol.Key key)
+    {
+        return 0;
     }
 
     protected void fillConstructorProperties(IdFunctionObject ctor)
@@ -777,8 +947,12 @@ public abstract class IdScriptableObject extends ScriptableObject
     @Override
     protected ScriptableObject getOwnPropertyDescriptor(Context cx, Object id) {
       ScriptableObject desc = super.getOwnPropertyDescriptor(cx, id);
-      if (desc == null && id instanceof String) {
-        desc = getBuiltInDescriptor((String) id);
+      if (desc == null) {
+          if (id instanceof String) {
+              desc = getBuiltInDescriptor((String) id);
+          } else if (id instanceof NativeSymbol) {
+              desc = getBuiltInDescriptor(((NativeSymbol)id).getKey());
+          }
       }
       return desc;
     }
@@ -801,6 +975,26 @@ public abstract class IdScriptableObject extends ScriptableObject
       }
       if (prototypeValues != null) {
         int id = prototypeValues.findId(name);
+        if (id != 0) {
+          value = prototypeValues.get(id);
+          attr = prototypeValues.getAttributes(id);
+          return buildDataDescriptor(scope, value, attr);
+        }
+      }
+      return null;
+    }
+
+    private ScriptableObject getBuiltInDescriptor(NativeSymbol.Key key) {
+      Object value = null;
+      int attr = EMPTY;
+
+      Scriptable scope = getParentScope();
+      if (scope == null) {
+        scope = this;
+      }
+
+      if (prototypeValues != null) {
+        int id = prototypeValues.findId(key);
         if (id != 0) {
           value = prototypeValues.get(id);
           attr = prototypeValues.getAttributes(id);

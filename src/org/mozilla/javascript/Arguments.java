@@ -43,7 +43,7 @@ final class Arguments extends IdScriptableObject
             callerObj = NOT_FOUND;
         }
 
-        defineProperty(NativeSymbol.ITERATOR_PROPERTY, iteratorMethod, ScriptableObject.DONTENUM);
+        defineProperty(NativeSymbol.ITERATOR, iteratorMethod, ScriptableObject.DONTENUM);
     }
 
     @Override
