@@ -131,7 +131,7 @@ public class Test262SuiteTest {
 
     private static final Yaml YAML = new Yaml();
 
-    public static List<File> getTestFiles() throws IOException {
+    public static List<File> getTestFilesFromFile() throws IOException {
         File testDir = new File("test262/test");
 
         List<File> testFiles = new LinkedList<File>();
@@ -194,10 +194,28 @@ public class Test262SuiteTest {
         return testFiles;
     }
 
+    public static List<File> getTestFilesFromEnvironment(String testParam) throws IOException {
+        File baseDir = new File("test262/test");
+        File root = new File(baseDir, testParam);
+        if (!root.exists()) {
+            throw new IOException("Base directory " + root + " does not exist");
+        }
+        List<File> files = new ArrayList<File>();
+        recursiveListFilesHelper(root, JS_FILE_FILTER, files);
+        return files;
+    }
+
     @Parameters(name = "js={0}, opt={3}, strict={4}")
     public static Collection<Object[]> test262SuiteValues() throws IOException {
         List<Object[]> result = new ArrayList<Object[]>();
-        List<File> tests = getTestFiles();
+        List<File> tests;
+
+        String testDirs = System.getenv("TEST_262_BASE");
+        if (testDirs == null) {
+            tests = getTestFilesFromFile();
+        } else {
+            tests = getTestFilesFromEnvironment(testDirs);
+        }
         for (File jsTest : tests) {
             String jsFileStr = (String) SourceReader.readFileOrUrl(jsTest.getPath(), true, "UTF-8");
             List<String> harnessFiles = new ArrayList<String>();

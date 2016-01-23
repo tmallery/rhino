@@ -20,6 +20,14 @@ public class NativeSymbol extends IdScriptableObject {
     public static final Key ITERATOR = new Key();
     public static final Key TO_STRING_TAG = new Key();
     public static final Key SPECIES = new Key();
+    public static final Key HAS_INSTANCE = new Key();
+    public static final Key IS_CONCAT_SPREADABLE = new Key();
+    public static final Key TO_PRIMITIVE = new Key();
+    public static final Key MATCH = new Key();
+    public static final Key REPLACE = new Key();
+    public static final Key SEARCH = new Key();
+    public static final Key SPLIT = new Key();
+    public static final Key UNSCOPABLES = new Key();
 
     private final String description;
     private final Key key;
@@ -31,6 +39,14 @@ public class NativeSymbol extends IdScriptableObject {
         createStandardSymbol(cx, scope, ctor, "iterator", ITERATOR);
         createStandardSymbol(cx, scope, ctor, "species", SPECIES);
         createStandardSymbol(cx, scope, ctor, "toStringTag", TO_STRING_TAG);
+        createStandardSymbol(cx, scope, ctor, "hasInstance", HAS_INSTANCE);
+        createStandardSymbol(cx, scope, ctor, "isConcatSpreadable", IS_CONCAT_SPREADABLE);
+        createStandardSymbol(cx, scope, ctor, "toPrimitive", TO_PRIMITIVE);
+        createStandardSymbol(cx, scope, ctor, "match", MATCH);
+        createStandardSymbol(cx, scope, ctor, "replace", REPLACE);
+        createStandardSymbol(cx, scope, ctor, "search", SEARCH);
+        createStandardSymbol(cx, scope, ctor, "split", SPLIT);
+        createStandardSymbol(cx, scope, ctor, "unscopables", UNSCOPABLES);
     }
 
     public NativeSymbol(String desc, Key key) {
@@ -184,6 +200,32 @@ public class NativeSymbol extends IdScriptableObject {
     @Override
     public String toString() {
         return "Symbol(" + description + ')';
+    }
+
+    // Symbol objects have a special property that one cannot add properties.
+
+    @Override
+    public void put(String name, Scriptable start, Object value)
+    {
+        if (Context.getCurrentContext().isStrictMode()) {
+            ScriptRuntime.typeError0("msg.no.assign.symbol.strict");
+        }
+    }
+
+    @Override
+    public void put(int index, Scriptable start, Object value)
+    {
+        if (Context.getCurrentContext().isStrictMode()) {
+            ScriptRuntime.typeError0("msg.no.assign.symbol.strict");
+        }
+    }
+
+    @Override
+    public void put(NativeSymbol.Key key, ScriptableObject start, Object value)
+    {
+        if (Context.getCurrentContext().isStrictMode()) {
+            ScriptRuntime.typeError0("msg.no.assign.symbol.strict");
+        }
     }
 
     @Override
