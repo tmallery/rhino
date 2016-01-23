@@ -474,7 +474,7 @@ public abstract class IdScriptableObject extends ScriptableObject
         int info = findInstanceIdInfo(key);
         if (info != 0) {
             if (start == this && isSealed()) {
-                throw Context.reportRuntimeError("msg.modify.sealed");
+                throw Context.reportRuntimeError0("msg.modify.sealed");
             }
             int attr = (info >>> 16);
             if ((attr & READONLY) == 0) {
@@ -492,7 +492,7 @@ public abstract class IdScriptableObject extends ScriptableObject
             int id = prototypeValues.findId(key);
             if (id != 0) {
                 if (start == this && isSealed()) {
-                    throw Context.reportRuntimeError("msg.modify.sealed");
+                    throw Context.reportRuntimeError0("msg.modify.sealed");
                 }
                 prototypeValues.set(id, start, value);
                 return;

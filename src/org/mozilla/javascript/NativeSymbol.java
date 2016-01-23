@@ -158,7 +158,7 @@ public class NativeSymbol extends IdScriptableObject {
         try {
             return (NativeSymbol)thisObj;
         } catch (ClassCastException cce) {
-            throw ScriptRuntime.typeError("Symbol expected");
+            throw ScriptRuntime.typeError1("msg.invalid.type", thisObj.getClass().getName());
         }
     }
 
