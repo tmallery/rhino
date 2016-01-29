@@ -284,9 +284,9 @@ final class Arguments extends IdScriptableObject
     }
 
     @Override
-    Object[] getIds(boolean getAll)
+    Object[] getIds(boolean getAll, boolean includeSymbols)
     {
-        Object[] ids = super.getIds(getAll);
+        Object[] ids = super.getIds(getAll, includeSymbols);
         if (args.length != 0) {
             boolean[] present = new boolean[args.length];
             int extraCount = args.length;

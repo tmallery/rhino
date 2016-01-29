@@ -243,7 +243,7 @@ final class NativeString extends IdScriptableObject
                     CharSequence s;
                     if (args.length == 0) {
                         s = "";
-                    } else if ((args[0] instanceof NativeSymbol) && (thisObj != null)) {
+                    } else if (ScriptRuntime.isSymbol(args[0]) && (thisObj != null)) {
                         // 19.4.3.2 et.al. Convert a symbol to a string with String() but not new String()
                         s = args[0].toString();
                     } else {

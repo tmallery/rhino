@@ -14,8 +14,10 @@ public class NativeSymbol extends IdScriptableObject {
     private static final long serialVersionUID = -589539749749830003L;
 
     public static final String CLASS_NAME = "Symbol";
+    public static final String TYPE_NAME = "symbol";
 
     private static final Object GLOBAL_TABLE_KEY = new Object();
+    private static final Object CONSTRUCTOR_SLOT = new Object();
 
     public static final Key ITERATOR = new Key();
     public static final Key TO_STRING_TAG = new Key();
@@ -31,27 +33,61 @@ public class NativeSymbol extends IdScriptableObject {
 
     private final String description;
     private final Key key;
+    private final NativeSymbol symbolData;
 
     public static void init(Context cx, Scriptable scope, boolean sealed) {
-        NativeSymbol obj = new NativeSymbol("", new Key());
+        NativeSymbol obj = new NativeSymbol();
         ScriptableObject ctor = obj.exportAsJSClass(MAX_PROTOTYPE_ID, scope, sealed);
 
-        createStandardSymbol(cx, scope, ctor, "iterator", ITERATOR);
-        createStandardSymbol(cx, scope, ctor, "species", SPECIES);
-        createStandardSymbol(cx, scope, ctor, "toStringTag", TO_STRING_TAG);
-        createStandardSymbol(cx, scope, ctor, "hasInstance", HAS_INSTANCE);
-        createStandardSymbol(cx, scope, ctor, "isConcatSpreadable", IS_CONCAT_SPREADABLE);
-        createStandardSymbol(cx, scope, ctor, "toPrimitive", TO_PRIMITIVE);
-        createStandardSymbol(cx, scope, ctor, "match", MATCH);
-        createStandardSymbol(cx, scope, ctor, "replace", REPLACE);
-        createStandardSymbol(cx, scope, ctor, "search", SEARCH);
-        createStandardSymbol(cx, scope, ctor, "split", SPLIT);
-        createStandardSymbol(cx, scope, ctor, "unscopables", UNSCOPABLES);
+        cx.putThreadLocal(CONSTRUCTOR_SLOT, Boolean.TRUE);
+        try {
+            createStandardSymbol(cx, scope, ctor, "iterator", ITERATOR);
+            createStandardSymbol(cx, scope, ctor, "species", SPECIES);
+            createStandardSymbol(cx, scope, ctor, "toStringTag", TO_STRING_TAG);
+            createStandardSymbol(cx, scope, ctor, "hasInstance", HAS_INSTANCE);
+            createStandardSymbol(cx, scope, ctor, "isConcatSpreadable", IS_CONCAT_SPREADABLE);
+            createStandardSymbol(cx, scope, ctor, "toPrimitive", TO_PRIMITIVE);
+            createStandardSymbol(cx, scope, ctor, "match", MATCH);
+            createStandardSymbol(cx, scope, ctor, "replace", REPLACE);
+            createStandardSymbol(cx, scope, ctor, "search", SEARCH);
+            createStandardSymbol(cx, scope, ctor, "split", SPLIT);
+            createStandardSymbol(cx, scope, ctor, "unscopables", UNSCOPABLES);
+        } finally {
+            cx.removeThreadLocal(CONSTRUCTOR_SLOT);
+        }
     }
 
-    public NativeSymbol(String desc, Key key) {
+    private NativeSymbol()
+    {
+        this.description = null;
+        this.key = new Key();
+        this.symbolData = null;
+    }
+
+    private NativeSymbol(String desc, Key key) {
         this.description = desc;
         this.key = key;
+        this.symbolData = this;
+    }
+
+    public NativeSymbol(NativeSymbol s) {
+        this.description = s.description;
+        this.key = s.key;
+        this.symbolData = s.symbolData;
+    }
+
+    /**
+     * Use this when we need to create symbols internally because of the convoluted way we have to
+     * construct them.
+     */
+    public static NativeSymbol construct(Context cx, Scriptable scope, Object[] args)
+    {
+        cx.putThreadLocal(CONSTRUCTOR_SLOT, Boolean.TRUE);
+        try {
+            return (NativeSymbol)cx.newObject(scope, CLASS_NAME, args);
+        } finally {
+            cx.removeThreadLocal(CONSTRUCTOR_SLOT);
+        }
     }
 
     @Override
@@ -66,8 +102,9 @@ public class NativeSymbol extends IdScriptableObject {
         addIdFunctionProperty(ctor, CLASS_NAME, ConstructorId_keyFor, "keyFor", 1);
     }
 
-    private static void createStandardSymbol(Context cx, Scriptable scope, ScriptableObject ctor, String name, Key key) {
-        NativeSymbol sym = (NativeSymbol)cx.newObject(scope, CLASS_NAME, new Object[] { name, key });
+    private static void createStandardSymbol(Context cx, Scriptable scope, ScriptableObject ctor, String name, Key key)
+    {
+        Scriptable sym = cx.newObject(scope, CLASS_NAME, new Object[] { name, key });
         ctor.defineProperty(name, sym, DONTENUM | READONLY | PERMANENT);
     }
 
@@ -76,10 +113,11 @@ public class NativeSymbol extends IdScriptableObject {
     @Override
     protected int findPrototypeId(String s) {
         int id = 0;
-//  #generated# Last update: 2016-01-21 16:38:39 PST
+//  #generated# Last update: 2016-01-26 16:39:41 PST
         L0: { id = 0; String X = null;
             int s_length = s.length();
-            if (s_length==8) { X="toString";id=Id_toString; }
+            if (s_length==7) { X="valueOf";id=Id_valueOf; }
+            else if (s_length==8) { X="toString";id=Id_toString; }
             else if (s_length==11) { X="constructor";id=Id_constructor; }
             if (X!=null && X!=s && !X.equals(s)) id = 0;
             break L0;
@@ -91,7 +129,9 @@ public class NativeSymbol extends IdScriptableObject {
     @Override
     protected int findPrototypeId(Key key) {
         if (key == TO_STRING_TAG) {
-            return Id_toStringTag;
+            return SymbolId_toStringTag;
+        } else if (key == TO_PRIMITIVE) {
+            return SymbolId_toPrimitive;
         }
         return 0;
     }
@@ -101,8 +141,10 @@ public class NativeSymbol extends IdScriptableObject {
         ConstructorId_for       = -1,
         Id_constructor          = 1,
         Id_toString             = 2,
-        Id_toStringTag          = 3,
-        MAX_PROTOTYPE_ID        = Id_toStringTag;
+        Id_valueOf              = 4,
+        SymbolId_toStringTag    = 3,
+        SymbolId_toPrimitive    = 5,
+        MAX_PROTOTYPE_ID        = SymbolId_toPrimitive;
 
     // #/string_id_map#
 
@@ -119,8 +161,14 @@ public class NativeSymbol extends IdScriptableObject {
         case Id_toString:
             initPrototypeMethod(CLASS_NAME, id, "toString", 0);
             break;
-        case Id_toStringTag:
+        case Id_valueOf:
+            initPrototypeMethod(CLASS_NAME, id, "valueOf", 0);
+            break;
+        case SymbolId_toStringTag:
             initPrototypeValue(id, TO_STRING_TAG, CLASS_NAME, DONTENUM | READONLY);
+            break;
+        case SymbolId_toPrimitive:
+            initPrototypeMethod(CLASS_NAME, id, TO_PRIMITIVE, "Symbol.toPrimitive", 1);
             break;
         default:
             super.initPrototypeId(id);
@@ -142,13 +190,22 @@ public class NativeSymbol extends IdScriptableObject {
 
         case Id_constructor:
             if (thisObj == null) {
-                return js_constructor(args);
+                if (cx.getThreadLocal(CONSTRUCTOR_SLOT) == null) {
+                    // We should never get to this via "new".
+                    throw ScriptRuntime.typeError0("msg.no.symbol.new");
+                } else {
+                    // Unless we are being called by our own internal "new"
+                    return js_constructor(args);
+                }
             } else {
-                return cx.newObject(scope, CLASS_NAME, args);
+                return construct(cx, scope, args);
             }
 
         case Id_toString:
             return getSelf(thisObj).toString();
+        case Id_valueOf:
+        case SymbolId_toPrimitive:
+            return getSelf(thisObj).js_valueOf();
         default:
             return super.execIdCall(f, cx, scope, thisObj, args);
         }
@@ -162,10 +219,25 @@ public class NativeSymbol extends IdScriptableObject {
         }
     }
 
-    private Object js_constructor(Object[] args) {
-        String desc = (args.length > 0 ? ScriptRuntime.toString(args[0]) : "");
+    private static NativeSymbol js_constructor(Object[] args) {
+        String desc;
+        if (args.length > 0) {
+            if (Undefined.instance.equals(args[0])) {
+                desc = "";
+            } else {
+                desc = ScriptRuntime.toString(args[0]);
+            }
+        } else {
+            desc = "";
+        }
+
         Key key = (args.length > 1 ? (Key)args[1] : new Key());
         return new NativeSymbol(desc, key);
+    }
+
+    private Object js_valueOf() {
+        // In the case that "Object()" was called we actually have a different "internal slot"
+        return symbolData;
     }
 
     private Object js_for(Context cx, Scriptable scope, Object[] args) {
@@ -175,7 +247,7 @@ public class NativeSymbol extends IdScriptableObject {
         NativeSymbol ret = table.get(name);
 
         if (ret == null) {
-            ret = (NativeSymbol)cx.newObject(scope, CLASS_NAME, new Object[] { name });
+            ret = construct(cx, scope, new Object[]{name});
             table.put(name, ret);
         }
         return ret;
@@ -207,7 +279,9 @@ public class NativeSymbol extends IdScriptableObject {
     @Override
     public void put(String name, Scriptable start, Object value)
     {
-        if (Context.getCurrentContext().isStrictMode()) {
+        if (!isSymbol()) {
+            super.put(name, start, value);
+        } else if (Context.getCurrentContext().isStrictMode()) {
             ScriptRuntime.typeError0("msg.no.assign.symbol.strict");
         }
     }
@@ -215,22 +289,37 @@ public class NativeSymbol extends IdScriptableObject {
     @Override
     public void put(int index, Scriptable start, Object value)
     {
-        if (Context.getCurrentContext().isStrictMode()) {
+        if (!isSymbol()) {
+            super.put(index, start, value);
+        } else if (Context.getCurrentContext().isStrictMode()) {
             ScriptRuntime.typeError0("msg.no.assign.symbol.strict");
         }
     }
 
     @Override
-    public void put(NativeSymbol.Key key, ScriptableObject start, Object value)
+    public void put(NativeSymbol.Key key, SymbolScriptable start, Object value)
     {
-        if (Context.getCurrentContext().isStrictMode()) {
+        if (!isSymbol()) {
+            super.put(key, start, value);
+        } else if (Context.getCurrentContext().isStrictMode()) {
             ScriptRuntime.typeError0("msg.no.assign.symbol.strict");
         }
     }
 
+    /**
+     * Object() on a Symbol constructs an object which is NOT a symbol, but which has an "internal data slot
+     * that is. Furthermore, such an object has the Symbol prototype so this particular object is still used.
+     * Account for that here: an "Object" that was created from a Symbol has a different value of the slot.
+     */
+    public boolean isSymbol()
+    {
+        return (symbolData == this);
+    }
+
     @Override
-    public String getTypeOf() {
-        return "symbol";
+    public String getTypeOf()
+    {
+        return (isSymbol() ? TYPE_NAME : super.getTypeOf());
     }
 
     @Override
@@ -249,6 +338,11 @@ public class NativeSymbol extends IdScriptableObject {
 
     public Key getKey() {
         return key;
+    }
+
+    public String getDescription()
+    {
+        return description;
     }
 
     private Map<String, NativeSymbol> getGlobalMap() {

@@ -44,7 +44,8 @@ import org.mozilla.javascript.annotations.JSStaticFunction;
  * @author Norris Boyd
  */
 
-public abstract class ScriptableObject implements Scriptable, Serializable,
+public abstract class ScriptableObject implements SymbolScriptable,
+                                                  Serializable,
                                                   DebuggableObject,
                                                   ConstProperties
 {
@@ -470,8 +471,10 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
      * @param key a Symbol that identifies the property
      * @param start the object in which the lookup began
      * @return true if and only if the property was found in the object
+     * @since 1.7.8
      */
-    public boolean has(NativeSymbol.Key key, Scriptable start)
+    @Override
+    public boolean has(NativeSymbol.Key key, SymbolScriptable start)
     {
         return null != getSlot(null, key, 0, SLOT_QUERY);
     }
@@ -527,8 +530,10 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
      * @param symbol the symbol that references the property
      * @param start the object in which the lookup began
      * @return the value of the property (may be null), or NOT_FOUND
+     * @since 1.7.8
      */
-    public Object get(NativeSymbol.Key symbol, Scriptable start)
+    @Override
+    public Object get(NativeSymbol.Key symbol, SymbolScriptable start)
     {
         Slot slot = getSlot(null, symbol, 0, SLOT_QUERY);
         if (slot == null) {
@@ -609,9 +614,10 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
      * @param key the symbol that references the property
      * @param start the object whose property is being set
      * @param value value to set the property to
-     * @since 1.8.0
+     * @since 1.7.8
      */
-    public void put(NativeSymbol.Key key, ScriptableObject start, Object value)
+    @Override
+    public void put(NativeSymbol.Key key, SymbolScriptable start, Object value)
     {
         if (putImpl(null, key, 0, start, value))
             return;
@@ -641,7 +647,9 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
      * no action is taken.
      *
      * @param key the symbol's value for the property
+     * @since 1.7.8
      */
+    @Override
     public void delete(NativeSymbol.Key key)
     {
         checkNotSealed(key, 0);
@@ -792,6 +800,7 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
      * @see org.mozilla.javascript.ScriptableObject#DONTENUM
      * @see org.mozilla.javascript.ScriptableObject#PERMANENT
      * @see org.mozilla.javascript.ScriptableObject#EMPTY
+     * @since 1.7.8
      */
     public int getAttributes(NativeSymbol.Key key)
     {
@@ -881,6 +890,7 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
      * @see org.mozilla.javascript.ScriptableObject#DONTENUM
      * @see org.mozilla.javascript.ScriptableObject#PERMANENT
      * @see org.mozilla.javascript.ScriptableObject#EMPTY
+     * @since 1.7.8
      */
     public void setAttributes(NativeSymbol.Key symbol, int attributes)
     {
@@ -1066,7 +1076,8 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
     /**
      * Returns an array of ids for the properties of the object.
      *
-     * <p>Any properties with the attribute DONTENUM are not listed. <p>
+     * <p>Any properties with the attribute DONTENUM are not listed.
+     * Properties with Symbol keys are also not listed.<p>
      *
      * @return an array of java.lang.Objects with an entry for every
      * listed property. Properties accessed via an integer index will
@@ -1075,7 +1086,23 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
      * a String will have a String entry in the returned array.
      */
     public Object[] getIds() {
-        return getIds(false);
+        return getIds(false, false);
+    }
+
+    /**
+     * Returns an array of ids for the properties of the object.
+     *
+     * <p>Any properties with the attribute DONTENUM are not listed.
+     * Properties with Symbol keys are listed.<p>
+     *
+     * @return an array of java.lang.Objects with an entry for every
+     * listed property. Properties accessed via an integer index will
+     * have a corresponding
+     * Integer entry in the returned array. Properties accessed by
+     * a String will have a String entry in the returned array.
+     */
+    public Object[] getIdsWithSymbols() {
+        return getIds(false, true);
     }
 
     /**
@@ -1090,7 +1117,7 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
      * a String will have a String entry in the returned array.
      */
     public Object[] getAllIds() {
-        return getIds(true);
+        return getIds(true, true);
     }
 
     /**
@@ -1115,6 +1142,18 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
     public static Object getDefaultValue(Scriptable object, Class<?> typeHint)
     {
         Context cx = null;
+        String hint = hintToString(typeHint);
+
+        if (object instanceof SymbolScriptable) {
+            Object tp = getProperty((SymbolScriptable) object, NativeSymbol.TO_PRIMITIVE);
+            if (tp instanceof Function) {
+                cx = Context.getContext();
+                Function tpf = (Function)tp;
+                return tpf.call(cx, tpf.getParentScope(), object, new Object[] { hint });
+            }
+        }
+
+
         for (int i=0; i < 2; i++) {
             boolean tryToString;
             if (typeHint == ScriptRuntime.StringClass) {
@@ -1131,36 +1170,6 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
             } else {
                 methodName = "valueOf";
                 args = new Object[1];
-                String hint;
-                if (typeHint == null) {
-                    hint = "undefined";
-                } else if (typeHint == ScriptRuntime.StringClass) {
-                    hint = "string";
-                } else if (typeHint == ScriptRuntime.ScriptableClass) {
-                    hint = "object";
-                } else if (typeHint == ScriptRuntime.FunctionClass) {
-                    hint = "function";
-                } else if (typeHint == ScriptRuntime.BooleanClass
-                           || typeHint == Boolean.TYPE)
-                {
-                    hint = "boolean";
-                } else if (typeHint == ScriptRuntime.NumberClass ||
-                         typeHint == ScriptRuntime.ByteClass ||
-                         typeHint == Byte.TYPE ||
-                         typeHint == ScriptRuntime.ShortClass ||
-                         typeHint == Short.TYPE ||
-                         typeHint == ScriptRuntime.IntegerClass ||
-                         typeHint == Integer.TYPE ||
-                         typeHint == ScriptRuntime.FloatClass ||
-                         typeHint == Float.TYPE ||
-                         typeHint == ScriptRuntime.DoubleClass ||
-                         typeHint == Double.TYPE)
-                {
-                    hint = "number";
-                } else {
-                    throw Context.reportRuntimeError1(
-                        "msg.invalid.type", typeHint.toString());
-                }
                 args[0] = hint;
             }
             Object v = getProperty(object, methodName);
@@ -1191,6 +1200,38 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
         // fall through to error
         String arg = (typeHint == null) ? "undefined" : typeHint.getName();
         throw ScriptRuntime.typeError1("msg.default.value", arg);
+    }
+
+    private static String hintToString(Class<?> typeHint) {
+        if (typeHint == null) {
+            return "undefined";
+        } else if (typeHint == ScriptRuntime.StringClass) {
+            return "string";
+        } else if (typeHint == ScriptRuntime.ScriptableClass) {
+            return "object";
+        } else if (typeHint == ScriptRuntime.FunctionClass) {
+            return "function";
+        } else if (typeHint == ScriptRuntime.BooleanClass
+            || typeHint == Boolean.TYPE)
+        {
+            return "boolean";
+        } else if (typeHint == ScriptRuntime.NumberClass ||
+            typeHint == ScriptRuntime.ByteClass ||
+            typeHint == Byte.TYPE ||
+            typeHint == ScriptRuntime.ShortClass ||
+            typeHint == Short.TYPE ||
+            typeHint == ScriptRuntime.IntegerClass ||
+            typeHint == Integer.TYPE ||
+            typeHint == ScriptRuntime.FloatClass ||
+            typeHint == Float.TYPE ||
+            typeHint == ScriptRuntime.DoubleClass ||
+            typeHint == Double.TYPE)
+        {
+            return "number";
+        } else {
+            throw Context.reportRuntimeError1(
+                "msg.invalid.type", typeHint.toString());
+        }
     }
 
     /**
@@ -1756,6 +1797,7 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
      * @param value the initial value of the property
      * @param attributes the attributes of the JavaScript property
      * @see org.mozilla.javascript.Scriptable#put(String, Scriptable, Object)
+     * @since 1.7.8
      */
     public void defineProperty(NativeSymbol.Key symbol, Object value,
                                int attributes)
@@ -1981,7 +2023,7 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
      * @param props a map of property ids to property descriptors
      */
     public void defineOwnProperties(Context cx, ScriptableObject props) {
-        Object[] ids = props.getIds();
+        Object[] ids = props.getIdsWithSymbols();
         ScriptableObject[] descs = new ScriptableObject[ids.length];
         for (int i = 0, len = ids.length; i < len; ++i) {
             Object descObj = ScriptRuntime.getObjectElem(props, ids[i], cx);
@@ -2025,8 +2067,7 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
         if (checkValid) {
             ScriptableObject current = slot == null ?
                     null : slot.getPropertyDescriptor(cx, this);
-            String name = ScriptRuntime.toString(id);
-            checkPropertyChange(name, current, desc);
+            checkPropertyChange(id.toString(), current, desc);
         }
 
         boolean isAccessor = isAccessorDescriptor(desc);
@@ -2228,6 +2269,12 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
         if ( !(arg instanceof Scriptable) )
             throw ScriptRuntime.typeError1("msg.arg.not.object", ScriptRuntime.typeof(arg));
         return (Scriptable) arg;
+    }
+
+      protected static SymbolScriptable ensureSymbolScriptable(Object arg) {
+        if ( !(arg instanceof SymbolScriptable) )
+            throw ScriptRuntime.typeError1("msg.arg.not.object", ScriptRuntime.typeof(arg));
+        return (ScriptableObject) arg;
     }
 
     protected static ScriptableObject ensureScriptableObject(Object arg) {
@@ -2437,17 +2484,21 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
      * @return the value of a property with name <code>name</code> found in
      *         <code>obj</code> or any object in its prototype chain, or
      *         <code>Scriptable.NOT_FOUND</code> if not found
-     * @since 1.5R2
+     * @since 1.7.8
      */
-    public static Object getProperty(ScriptableObject obj, NativeSymbol.Key symbol)
+    public static Object getProperty(SymbolScriptable obj, NativeSymbol.Key symbol)
     {
-        ScriptableObject start = obj;
+        SymbolScriptable start = obj;
         Object result;
         do {
             result = obj.get(symbol, start);
             if (result != Scriptable.NOT_FOUND)
                 break;
-            obj = (ScriptableObject)obj.getPrototype();
+            if (obj.getPrototype() instanceof SymbolScriptable) {
+                obj = (SymbolScriptable) obj.getPrototype();
+            } else {
+                break;
+            }
         } while (obj != null);
         return result;
     }
@@ -2556,9 +2607,9 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
      * @param obj a JavaScript object
      * @param key the value of a symbol
      * @return the true if property was found
-     * @since 1.5R2
+     * @since 1.7.8
      */
-    public static boolean hasProperty(ScriptableObject obj, NativeSymbol.Key key)
+    public static boolean hasProperty(SymbolScriptable obj, NativeSymbol.Key key)
     {
         return null != getBase(obj, key);
     }
@@ -2634,11 +2685,11 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
      * @param obj a JavaScript object
      * @param key a Symbol
      * @param value any JavaScript value accepted by Scriptable.put
-     * @since 1.8.0
+     * @since 1.7.8
      */
-    public static void putProperty(ScriptableObject obj, NativeSymbol.Key key, Object value)
+    public static void putProperty(SymbolScriptable obj, NativeSymbol.Key key, Object value)
     {
-        ScriptableObject base = getBase(obj, key);
+        SymbolScriptable base = getBase(obj, key);
         if (base == null)
             base = obj;
         base.put(key, obj, value);
@@ -2842,12 +2893,16 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
         return obj;
     }
 
-    private static ScriptableObject getBase(ScriptableObject obj, NativeSymbol.Key key)
+    private static SymbolScriptable getBase(SymbolScriptable obj, NativeSymbol.Key key)
     {
         do {
             if (obj.has(key, obj))
                 break;
-            obj = (ScriptableObject)(obj.getPrototype());
+            if (obj.getPrototype() instanceof SymbolScriptable) {
+                obj = (SymbolScriptable) (obj.getPrototype());
+            } else {
+                break;
+            }
         } while(obj != null);
         return obj;
     }
@@ -2952,7 +3007,11 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
             if (count < 0) checkNotSealed(name, index);
             slot = getSlot(name, key, index, SLOT_MODIFY);
         }
-        return slot.setValue(value, this, start);
+        boolean ret = slot.setValue(value, this, start);
+        if (key != null) {
+            //slot.setAttributes(DONTENUM);
+        }
+        return ret;
     }
 
 
@@ -3313,7 +3372,7 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
         }
     }
 
-    Object[] getIds(boolean getAll) {
+    Object[] getIds(boolean getAll, boolean includeSymbols) {
         Slot[] s = slots;
         Object[] a;
         int externalLen = (externalData == null ? 0 : externalData.getArrayLength());
@@ -3340,7 +3399,10 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
             slot = slot.orderedNext;
         }
         while (slot != null) {
-            if (getAll || (slot.getAttributes() & DONTENUM) == 0) {
+            Context cx = null;
+            if (getAll ||
+                (((slot.getAttributes() & DONTENUM) == 0) &&
+                    (includeSymbols || (!(slot.name instanceof NativeSymbol.Key))))) {
                 if (c == externalLen) {
                     Object[] oldA = a;
                     a = new Object[s.length + externalLen];
@@ -3348,9 +3410,19 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
                         System.arraycopy(oldA, 0, a, 0, externalLen);
                     }
                 }
-                a[c++] = slot.name != null
-                        ? slot.name
-                        : Integer.valueOf(slot.indexOrHash);
+                if (slot.name == null) {
+                    a[c] = Integer.valueOf(slot.indexOrHash);
+                } else {
+                    if (slot.name instanceof NativeSymbol.Key) {
+                        if (cx == null) {
+                            cx = Context.getContext();
+                        }
+                        slot.name = NativeSymbol.construct(cx, this, new Object[] { "", slot.name });
+                    } else {
+                        a[c] = slot.name;
+                    }
+                }
+                c++;
             }
             slot = slot.orderedNext;
             while (slot != null && slot.wasDeleted) {
@@ -3445,7 +3517,7 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
     }
 
     protected Slot getSlot(Context cx, Object id, int accessType) {
-        if (id instanceof NativeSymbol) {
+        if (ScriptRuntime.isSymbol(id)) {
             return getSlot(null, ((NativeSymbol)id).getKey(), 0, accessType);
         }
         String name = ScriptRuntime.toStringIdOrIndex(cx, id);

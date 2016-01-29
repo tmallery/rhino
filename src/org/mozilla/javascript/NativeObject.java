@@ -154,7 +154,7 @@ public class NativeObject extends IdScriptableObject implements Map
           case Id_hasOwnProperty: {
             boolean result;
             Object arg = args.length < 1 ? Undefined.instance : args[0];
-            if (arg instanceof NativeSymbol) {
+            if (ScriptRuntime.isSymbol(arg)) {
                 ScriptableObject st = ScriptableObject.ensureScriptableObject(thisObj);
                 result = st.has(((NativeSymbol)arg).getKey(), st);
             } else {
@@ -172,7 +172,7 @@ public class NativeObject extends IdScriptableObject implements Map
           case Id_propertyIsEnumerable: {
             boolean result;
             Object arg = args.length < 1 ? Undefined.instance : args[0];
-            if (arg instanceof NativeSymbol) {
+            if (ScriptRuntime.isSymbol(arg)) {
                 ScriptableObject st = ScriptableObject.ensureScriptableObject(thisObj);
                 result = st.has(((NativeSymbol)arg).getKey(), st);
                 if (result && thisObj instanceof ScriptableObject) {
@@ -290,7 +290,7 @@ public class NativeObject extends IdScriptableObject implements Map
                 Scriptable obj = ensureScriptable(arg);
                 Object[] ids = obj.getIds();
                 for (int i = 0; i < ids.length; i++) {
-                  ids[i] = ScriptRuntime.toString(ids[i]);
+                    ids[i] = ScriptRuntime.toString(ids[i]);
                 }
                 return cx.newArray(scope, ids);
               }
@@ -313,7 +313,7 @@ public class NativeObject extends IdScriptableObject implements Map
                 ScriptableObject obj = ensureScriptableObject(arg);
                 Object nameArg = args.length < 2 ? Undefined.instance : args[1];
                 Object oid;
-                if (nameArg instanceof NativeSymbol) {
+                if (ScriptRuntime.isSymbol(nameArg)) {
                     oid = nameArg;
                 } else {
                     oid = ScriptRuntime.toString(nameArg);

@@ -403,7 +403,7 @@ public class ScriptRuntime {
                 }
                 // ECMA extension
                 val = ((Scriptable) val).getDefaultValue(BooleanClass);
-                if (val instanceof Scriptable)
+                if ((val instanceof Scriptable) && !isSymbol(val))
                     throw errorWithClassName("msg.primitive.expected", val);
                 continue;
             }
@@ -432,11 +432,11 @@ public class ScriptRuntime {
                 return toNumber(val.toString());
             if (val instanceof Boolean)
                 return ((Boolean) val).booleanValue() ? 1 : +0.0;
-            if (val instanceof NativeSymbol)
+            if (isSymbol(val))
                 throw typeError0("msg.not.a.number");
             if (val instanceof Scriptable) {
                 val = ((Scriptable) val).getDefaultValue(NumberClass);
-                if (val instanceof Scriptable)
+                if ((val instanceof Scriptable) && !isSymbol(val))
                     throw errorWithClassName("msg.primitive.expected", val);
                 continue;
             }
@@ -827,12 +827,12 @@ public class ScriptRuntime {
                 // about Numbers?
                 return numberToString(((Number)val).doubleValue(), 10);
             }
-            if (val instanceof NativeSymbol) {
+            if (isSymbol(val)) {
                 throw typeError0("msg.not.a.string");
             }
             if (val instanceof Scriptable) {
                 val = ((Scriptable) val).getDefaultValue(StringClass);
-                if (val instanceof Scriptable) {
+                if ((val instanceof Scriptable) && !isSymbol(val)) {
                     throw errorWithClassName("msg.primitive.expected", val);
                 }
                 continue;
@@ -1064,6 +1064,11 @@ public class ScriptRuntime {
      */
     public static Scriptable toObject(Context cx, Scriptable scope, Object val)
     {
+        if (isSymbol(val)) {
+            NativeSymbol result = new NativeSymbol((NativeSymbol)val);
+            setBuiltinProtoAndParent(result, scope, TopLevel.Builtins.Symbol);
+            return result;
+        }
         if (val instanceof Scriptable) {
             return (Scriptable) val;
         }
@@ -1479,8 +1484,8 @@ public class ScriptRuntime {
 
         if (obj instanceof XMLObject) {
             result = ((XMLObject)obj).get(cx, elem);
-        } else if (elem instanceof NativeSymbol) {
-            ScriptableObject so = ScriptableObject.ensureScriptableObject(obj);
+        } else if (isSymbol(elem)) {
+            SymbolScriptable so = ScriptableObject.ensureSymbolScriptable(obj);
             result = ScriptableObject.getProperty(so, ((NativeSymbol)elem).getKey());
         } else {
             String s = toStringIdOrIndex(cx, elem);
@@ -1641,8 +1646,8 @@ public class ScriptRuntime {
     {
         if (obj instanceof XMLObject) {
             ((XMLObject)obj).put(cx, elem, value);
-        } else if (elem instanceof NativeSymbol) {
-            ScriptableObject so = ScriptableObject.ensureScriptableObject(obj);
+        } else if (isSymbol(elem)) {
+            SymbolScriptable so = ScriptableObject.ensureSymbolScriptable(obj);
             ScriptableObject.putProperty(so, ((NativeSymbol)elem).getKey(), value);
         } else {
             String s = toStringIdOrIndex(cx, elem);
@@ -1735,8 +1740,8 @@ public class ScriptRuntime {
     public static boolean deleteObjectElem(Scriptable target, Object elem,
                                            Context cx)
     {
-        if (elem instanceof NativeSymbol) {
-            ScriptableObject so = ScriptableObject.ensureScriptableObject(target);
+        if (isSymbol(elem)) {
+            SymbolScriptable so = ScriptableObject.ensureSymbolScriptable(target);
             NativeSymbol.Key k = ((NativeSymbol)elem).getKey();
             so.delete(k);
             return !so.has(k, so);
@@ -1757,8 +1762,8 @@ public class ScriptRuntime {
     {
         boolean result;
 
-        if (elem instanceof NativeSymbol) {
-            ScriptableObject so = ScriptableObject.ensureScriptableObject(target);
+        if (isSymbol(elem)) {
+            SymbolScriptable so = ScriptableObject.ensureSymbolScriptable(target);
             result = ScriptableObject.hasProperty(so, ((NativeSymbol)elem).getKey());
         } else {
             String s = toStringIdOrIndex(cx, elem);
@@ -2285,10 +2290,13 @@ public class ScriptRuntime {
                 continue;
             }
             if (id instanceof String) {
-                String strId = (String)id;
+                String strId = (String) id;
                 if (!x.obj.has(strId, x.obj))
                     continue;   // must have been deleted
                 x.currentId = strId;
+            } else if (id instanceof NativeSymbol.Key) {
+                // Symbols do not show up in iteration
+                continue;
             } else {
                 int intId = ((Number)id).intValue();
                 if (!x.obj.has(intId, x.obj))
@@ -2346,9 +2354,9 @@ public class ScriptRuntime {
 
         Object result;
 
-        if (x.currentId instanceof NativeSymbol) {
-            ScriptableObject so = ScriptableObject.ensureScriptableObject(x.obj);
-            result = so.get(((NativeSymbol)x.currentId).getKey());
+        if (isSymbol(x.currentId)) {
+            SymbolScriptable so = ScriptableObject.ensureSymbolScriptable(x.obj);
+            result = so.get(((NativeSymbol)x.currentId).getKey(), so);
         } else {
             String s = toStringIdOrIndex(cx, x.currentId);
             if (s == null) {
@@ -2447,12 +2455,12 @@ public class ScriptRuntime {
         Scriptable thisObj;
         Object value;
 
-        if (elem instanceof NativeSymbol) {
+        if (isSymbol(elem)) {
             thisObj = toObjectOrNull(cx, obj, scope);
             if (thisObj == null) {
                 throw undefCallError(obj, String.valueOf(elem));
             }
-            ScriptableObject so = ScriptableObject.ensureScriptableObject(thisObj);
+            SymbolScriptable so = ScriptableObject.ensureSymbolScriptable(thisObj);
             value = ScriptableObject.getProperty(so, ((NativeSymbol)elem).getKey());
 
         } else {
@@ -3055,7 +3063,7 @@ public class ScriptRuntime {
         }
         Scriptable s = (Scriptable)val;
         Object result = s.getDefaultValue(typeHint);
-        if (result instanceof Scriptable)
+        if ((result instanceof Scriptable) && !isSymbol(result))
             throw typeError0("msg.bad.default.value");
         return result;
     }
@@ -3159,7 +3167,9 @@ public class ScriptRuntime {
             } else if (y instanceof CharSequence) {
                 return x == toNumber(y);
             } else if (y instanceof Boolean) {
-                return x == (((Boolean)y).booleanValue() ? 1.0 : +0.0);
+                return x == (((Boolean) y).booleanValue() ? 1.0 : +0.0);
+            } else if (isSymbol(y)) {
+                return false;
             } else if (y instanceof Scriptable) {
                 if (y instanceof ScriptableObject) {
                     Object xval = wrapNumber(x);
@@ -3187,7 +3197,9 @@ public class ScriptRuntime {
             } else if (y instanceof Number) {
                 return toNumber(x.toString()) == ((Number)y).doubleValue();
             } else if (y instanceof Boolean) {
-                return toNumber(x.toString()) == (((Boolean)y).booleanValue() ? 1.0 : 0.0);
+                return toNumber(x.toString()) == (((Boolean) y).booleanValue() ? 1.0 : 0.0);
+            } else if (isSymbol(y)) {
+                return false;
             } else if (y instanceof Scriptable) {
                 if (y instanceof ScriptableObject) {
                     Object test = ((ScriptableObject)y).equivalentValues(x.toString());
@@ -4370,6 +4382,15 @@ public class ScriptRuntime {
         // (Function)
         return sourceUrl.indexOf("(eval)") >= 0
                || sourceUrl.indexOf("(Function)") >= 0;
+    }
+
+    /**
+     * Not all "NativeSymbol" instances are actually symbols. So account for that here rather than just
+     * by using an "instanceof" check.
+     */
+    static boolean isSymbol(Object obj) {
+        return ((obj instanceof NativeSymbol) &&
+                ((NativeSymbol)obj).isSymbol());
     }
 
     private static RuntimeException errorWithClassName(String msg, Object val)

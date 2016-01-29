@@ -365,7 +365,7 @@ public abstract class IdScriptableObject extends ScriptableObject
 
 
     @Override
-    public boolean has(NativeSymbol.Key key, Scriptable start)
+    public boolean has(NativeSymbol.Key key, SymbolScriptable start)
     {
         int info = findInstanceIdInfo(key);
         if (info != 0) {
@@ -411,7 +411,7 @@ public abstract class IdScriptableObject extends ScriptableObject
     }
 
     @Override
-    public Object get(NativeSymbol.Key key, Scriptable start)
+    public Object get(NativeSymbol.Key key, SymbolScriptable start)
     {
         Object value = super.get(key, start);
         if (value != NOT_FOUND) {
@@ -469,7 +469,7 @@ public abstract class IdScriptableObject extends ScriptableObject
     }
 
     @Override
-    public void put(NativeSymbol.Key key, ScriptableObject start, Object value)
+    public void put(NativeSymbol.Key key, SymbolScriptable start, Object value)
     {
         int info = findInstanceIdInfo(key);
         if (info != 0) {
@@ -608,9 +608,9 @@ public abstract class IdScriptableObject extends ScriptableObject
     }
 
     @Override
-    Object[] getIds(boolean getAll)
+    Object[] getIds(boolean getAll, boolean includeSymbols)
     {
-        Object[] result = super.getIds(getAll);
+        Object[] result = super.getIds(getAll, includeSymbols);
 
         if (prototypeValues != null) {
             result = prototypeValues.getNames(getAll, result);
@@ -950,7 +950,7 @@ public abstract class IdScriptableObject extends ScriptableObject
       if (desc == null) {
           if (id instanceof String) {
               desc = getBuiltInDescriptor((String) id);
-          } else if (id instanceof NativeSymbol) {
+          } else if (ScriptRuntime.isSymbol(id)) {
               desc = getBuiltInDescriptor(((NativeSymbol)id).getKey());
           }
       }

@@ -292,7 +292,14 @@ public class Context
      */
     public static final int FEATURE_V8_EXTENSIONS = 14;
 
-
+    /**
+     * Restores the pre-edition 3 JavaScript behavior that a "null" parameter for "this" for
+     * Function.prototype.call() or Function.prototype.apply() will be turned into the "global object."
+     * This flag defaults to true for language versions <= "VERSION_1_7" and false for higher
+     * versions.
+     * See ECMAScript 6, section 19.2.3.1.
+     * @since 1.7.8
+     */
     public static final int FEATURE_OLD_UNDEF_NULL_THIS = 15;
 
     public static final String languageVersionProperty = "language version";
