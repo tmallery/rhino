@@ -992,7 +992,7 @@ public class NativeArray extends IdScriptableObject implements List
     /**
      * See ECMA 15.4.4.5
      */
-    private static Scriptable js_sort(final Context cx, final Scriptable scope,
+    private static Scriptable  js_sort(final Context cx, final Scriptable scope,
             final Scriptable thisObj, final Object[] args)
     {
         final Comparator<Object> comparator;
