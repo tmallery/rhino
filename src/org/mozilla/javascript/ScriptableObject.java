@@ -3249,11 +3249,12 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
 
     /**
      * This comparator sorts property fields in spec-compliant order. Numeric ids first, in numeric
-     * order, folowed by string ids, in insertion order. Since this class already keeps string keys
+     * order, followed by string ids, in insertion order. Since this class already keeps string keys
      * in insertion-time order, we treat all as equal. The "Arrays.sort" method will then not
-     * change their order, but simply move all the numeric properties to the front.
+     * change their order, but simply move all the numeric properties to the front, since this
+     * method is defined to be stable.
      */
-    private static final class KeyComparator
+    public static final class KeyComparator
         implements Comparator<Object>
     {
         @Override
