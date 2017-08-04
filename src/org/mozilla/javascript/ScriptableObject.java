@@ -446,7 +446,7 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
      */
     public boolean has(String name, Scriptable start)
     {
-        return null != getSlot(name, 0, SLOT_QUERY);
+        return null != getReadOnlySlot(name);
     }
 
     /**
@@ -461,7 +461,7 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
         if (externalData != null) {
             return (index < externalData.getArrayLength());
         }
-        return null != getSlot(null, index, SLOT_QUERY);
+        return null != getReadOnlySlot(index);
     }
 
     /**
@@ -476,7 +476,7 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
      */
     public Object get(String name, Scriptable start)
     {
-        Slot slot = getSlot(name, 0, SLOT_QUERY);
+        Slot slot = getReadOnlySlot(name);
         if (slot == null) {
             return Scriptable.NOT_FOUND;
         }
@@ -499,7 +499,7 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
             return Scriptable.NOT_FOUND;
         }
 
-        Slot slot = getSlot(null, index, SLOT_QUERY);
+        Slot slot = getReadOnlySlot(index);
         if (slot == null) {
             return Scriptable.NOT_FOUND;
         }
@@ -632,7 +632,7 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
      */
     public boolean isConst(String name)
     {
-        Slot slot = getSlot(name, 0, SLOT_QUERY);
+        Slot slot = getReadOnlySlot(name);
         if (slot == null) {
             return false;
         }
@@ -700,7 +700,7 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
      */
     public int getAttributes(String name)
     {
-        return findAttributeSlot(name, 0, SLOT_QUERY).getAttributes();
+        return findAttributeSlotReadOnly(name, 0).getAttributes();
     }
 
     /**
@@ -718,7 +718,7 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
      */
     public int getAttributes(int index)
     {
-        return findAttributeSlot(null, index, SLOT_QUERY).getAttributes();
+        return findAttributeSlotReadOnly(null, index).getAttributes();
     }
 
     /**
@@ -789,7 +789,7 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
         if (isExtensible()) {
             gslot = (GetterSlot)getSlot(name, index, SLOT_MODIFY_GETTER_SETTER);
         } else {
-            Slot slot = unwrapSlot(getSlot(name, index, SLOT_QUERY));
+            Slot slot = unwrapSlot(getReadOnlySlot(name, index));
             if (!(slot instanceof GetterSlot))
                 return;
             gslot = (GetterSlot) slot;
@@ -826,7 +826,7 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
     {
         if (name != null && index != 0)
             throw new IllegalArgumentException(name);
-        Slot slot = unwrapSlot(getSlot(name, index, SLOT_QUERY));
+        Slot slot = unwrapSlot(getReadOnlySlot(name, index));
         if (slot == null)
             return null;
         if (slot instanceof GetterSlot) {
@@ -845,7 +845,7 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
      * @return whether the property is a getter or a setter
      */
     protected boolean isGetterOrSetter(String name, int index, boolean setter) {
-        Slot slot = unwrapSlot(getSlot(name, index, SLOT_QUERY));
+        Slot slot = unwrapSlot(getReadOnlySlot(name, index));
         if (slot instanceof GetterSlot) {
             if (setter && ((GetterSlot)slot).setter != null) return true;
             if (!setter && ((GetterSlot)slot).getter != null) return true;
@@ -1879,7 +1879,7 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
     protected void defineOwnProperty(Context cx, Object id, ScriptableObject desc,
                                      boolean checkValid) {
 
-        Slot slot = getSlot(cx, id, SLOT_QUERY);
+        Slot slot = getReadOnlySlot(cx, id);
         boolean isNew = slot == null;
 
         if (checkValid) {
@@ -2728,12 +2728,12 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
         }
         Slot slot;
         if (this != start) {
-            slot = getSlot(name, index, SLOT_QUERY);
+            slot = getReadOnlySlot(name, index);
             if (slot == null) {
                 return false;
             }
         } else if (!isExtensible) {
-            slot = getSlot(name, index, SLOT_QUERY);
+            slot = getReadOnlySlot(name, index);
             if (slot == null) {
                 return true;
             }
@@ -2768,12 +2768,12 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
         }
         Slot slot;
         if (this != start) {
-            slot = getSlot(name, index, SLOT_QUERY);
+            slot = getReadOnlySlot(name, index);
             if (slot == null) {
                 return false;
             }
         } else if (!isExtensible()) {
-            slot = getSlot(name, index, SLOT_QUERY);
+            slot = getReadOnlySlot(name, index);
             if (slot == null) {
                 return true;
             }
@@ -2793,6 +2793,16 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
             return true;
         }
         return slot.setValue(value, this, start);
+    }
+
+    private Slot findAttributeSlotReadOnly(String name, int index)
+    {
+        Slot slot = getReadOnlySlot(name, index);
+        if (slot == null) {
+            String str = (name != null ? name : Integer.toString(index));
+            throw Context.reportRuntimeError1("msg.prop.not.found", str);
+        }
+        return slot;
     }
 
     private Slot findAttributeSlot(String name, int index, int accessType)
@@ -2862,6 +2872,44 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
         // A new slot has to be inserted or the old has to be replaced
         // by GetterSlot. Time to synchronize.
         return createSlot(name, indexOrHash, accessType);
+    }
+
+    private Slot getReadOnlySlot(String name) {
+        final Slot[] sls = slots;
+        if (sls == null) {
+            return null;
+        }
+        final int hc = name.hashCode();
+        final int si = getSlotIndex(sls.length, hc);
+
+        for (Slot slot = sls[si]; slot != null; slot = slot.next) {
+            if (name.equals(slot.name)) {
+                return slot;
+            }
+        }
+        return null;
+    }
+
+    private Slot getReadOnlySlot(int index) {
+        final Slot[] sls = slots;
+        if (sls == null) {
+            return null;
+        }
+        int si = getSlotIndex(sls.length, index);
+        for (Slot slot = sls[si]; slot != null; slot = slot.next) {
+            if (index == slot.indexOrHash) {
+                return slot;
+            }
+        }
+        return null;
+    }
+
+    private Slot getReadOnlySlot(String name, int index)
+    {
+        if (name == null) {
+            return getReadOnlySlot(index);
+        }
+        return getReadOnlySlot(name);
     }
 
     private synchronized Slot createSlot(String name, int indexOrHash, int accessType) {
@@ -3202,7 +3250,7 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
     }
 
     protected ScriptableObject getOwnPropertyDescriptor(Context cx, Object id) {
-        Slot slot = getSlot(cx, id, SLOT_QUERY);
+        Slot slot = getReadOnlySlot(cx, id);
         if (slot == null) return null;
         Scriptable scope = getParentScope();
         return slot.getPropertyDescriptor(cx, (scope == null ? this : scope));
@@ -3214,6 +3262,15 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
             return getSlot(null, ScriptRuntime.lastIndexResult(cx), accessType);
         } else {
             return getSlot(name, 0, accessType);
+        }
+    }
+
+    private Slot getReadOnlySlot(Context cx, Object id) {
+        String name = ScriptRuntime.toStringIdOrIndex(cx, id);
+        if (name == null) {
+            return getReadOnlySlot(ScriptRuntime.lastIndexResult(cx));
+        } else {
+            return getReadOnlySlot(name);
         }
     }
 
