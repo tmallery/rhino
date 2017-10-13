@@ -7,7 +7,7 @@ package org.mozilla.javascript.tests;
 import org.junit.Test;
 import org.junit.Before;
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertNotNull;
 
 import org.mozilla.javascript.*;
 import org.mozilla.javascript.annotations.*;
@@ -17,18 +17,22 @@ public class MemberBoxCallTest {
     Scriptable scope;
 
     @Test
-    public void testPrototypeProperty() {
+    public void testgetOwnPropertyDescriptor() {
 		Context cx = Context.enter();
 		try {
-			assertEquals(evaluate(cx, 
-				"var hostObj = new AnnotatedHostObject(); " +
-				"var valueProperty = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(hostObj), \"foo\");" +
-				"var result = 'failed';" +
-				"if( valueProperty.get && valueProperty.set ) {" +
-					"valueProperty.set.call(hostObj, 'superVal');" +
-					"result = valueProperty.get.call(hostObj);" +
+			assertNotNull(evaluate(cx, "var hostObj = new AnnotatedHostObject(); hostObj;"));
+			Object valueProperty = evaluate(cx, "var valueProperty = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(hostObj), \"foo\"); valueProperty;");
+			assertNotNull(valueProperty);
+			Object result = evaluate(cx, 
+				"var result = 'valueProperty: ' + valueProperty;" +
+				"if( valueProperty && valueProperty.get && valueProperty.set ) {" +
+					"try { " +
+						"valueProperty.set.call(hostObj, 'superVal');" +
+						"result = valueProperty.get.call(hostObj);" +
+					"} catch(e) { result=('failed due to ' + e); }" +
 				"}"+
-				"result;", "superVal");
+				"result;");
+			assertEquals(result, "superVal");
         } finally {
             Context.exit();
         }
